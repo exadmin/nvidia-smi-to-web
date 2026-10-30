@@ -28,6 +28,8 @@ function chart(parent, title, unit, color, points, column, start, end, ceiling) 
 function render(){
   if(!latest)return;
   const now=Date.now(),start=now-Number($('#range').value),container=$('#cards');container.replaceChildren();
+  const graphs=$('#graphs');graphs.replaceChildren();
+  $('#history').hidden=latest.cards.length===0;
   $('#empty').hidden=latest.cards.length>0;
   $('#empty').textContent=latest.error?'Данные GPU недоступны. Проверьте драйвер и путь к nvidia-smi.':'Видеокарты NVIDIA не обнаружены.';
   for(const card of latest.cards){
@@ -40,11 +42,16 @@ function render(){
     metrics.append(metric('Температура',format(values.temperature,' °C'),values.temperature>=80),metric('Частота SM',format(values.smClock,' МГц')),metric('Частота памяти',format(values.memoryClock,' МГц')),metric('Загрузка GPU',format(values.utilization,' %')),metric('Память VRAM',values.memoryUsed==null||values.memoryTotal==null?'нет данных':`${format(values.memoryUsed/1024,'',1)} / ${format(values.memoryTotal/1024,' ГиБ',1)}`),metric('Мощность',values.power==null?'нет данных':`${format(values.power,' Вт')} / ${format(values.powerLimit,' Вт')}`));box.append(metrics);
     box.append(node('p','details',`PCIe: ${values.pcieGeneration==null?'—':`Gen ${values.pcieGeneration}`} ×${values.pcieWidth??'—'} · Вентилятор: ${format(values.fan,' %')} · Измерение: ${clock(card.lastSeen)}`));
     if(values.temperature>=80)box.append(node('p','hot','Высокая температура: проверьте охлаждение и обдув карты.'));
-    const charts=node('div','charts');box.append(charts);container.append(box);
+    container.append(box);
+    const graphBox=node('article','gpu'+(stale?' stale':''));
+    graphBox.append(node('h3','',`#${card.index}  ${card.name}`));
+    const charts=node('div','charts');graphBox.append(charts);graphs.append(graphBox);
     const points=state.get(card.uuid)||[];
     chart(charts,'Температура','°C','#ffb478',points,1,start,now,110);
     chart(charts,'Частота SM','МГц','#78b4ff',points,2,start,now);
+    chart(charts,'Частота памяти','МГц','#e6bd69',points,3,start,now);
     chart(charts,'Загрузка GPU','%', '#77d9be',points,6,start,now,100);
+    chart(charts,'Использование VRAM','МиБ','#ed92b4',points,4,start,now,values.memoryTotal);
     chart(charts,'Мощность','Вт','#cc9dff',points,7,start,now);
   }
 }
