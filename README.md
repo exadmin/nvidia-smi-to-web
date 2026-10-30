@@ -1,56 +1,68 @@
-# Tesla Monitor
+# nvidia-smi-to-web
 
-Лёгкая веб-панель NVIDIA GPU: Java 21+, встроенный `jdk.httpserver`, без сторонних runtime-зависимостей. Windows 11 / Ubuntu 26.x, x86-64. Данные читает локальный `nvidia-smi`; Python, NVML bindings и CUDA Toolkit не требуются. Нужен NVIDIA-драйвер, поддерживающий ваши карты и ОС.
+A lightweight NVIDIA GPU dashboard using Java 21+ and the embedded JDK HTTP server, with no third-party runtime dependencies. Targets Windows 11 and Ubuntu 26.x on x86-64.
 
-## Сборка и запуск
+[GitHub repository](https://github.com/exadmin/nvidia-smi-to-web)
+
+Requires an NVIDIA driver compatible with your GPU and OS, and `nvidia-smi`. Python, NVML bindings and CUDA Toolkit are not required.
+
+## Build and run
+
+With Maven:
 
 ```sh
 mvn package
-java -jar target/tesla-monitor-1.0.0.jar
+java -jar target/nvidia-smi-to-web-1.0.0.jar
 ```
 
-Откройте http://127.0.0.1:8080 . Без Maven можно собрать штатными инструментами JDK:
-
-Windows PowerShell:
+Without Maven, using standard JDK tools on Windows PowerShell:
 
 ```powershell
 ./build.ps1
-java -jar target/tesla-monitor-1.0.0.jar
+java -jar target/nvidia-smi-to-web-1.0.0.jar
 ```
 
-Ubuntu:
+On Ubuntu:
 
 ```sh
 sh build.sh
-java -jar target/tesla-monitor-1.0.0.jar
+java -jar target/nvidia-smi-to-web-1.0.0.jar
 ```
 
-Параметры:
+Open [localhost:8080](http://127.0.0.1:8080). The same JAR runs on both platforms with Java 21+ installed.
+
+Options:
 
 ```sh
-java -jar target/tesla-monitor-1.0.0.jar --host 0.0.0.0 --port 8080 --nvidia-smi /usr/bin/nvidia-smi
-java -jar target/tesla-monitor-1.0.0.jar --demo
+java -jar target/nvidia-smi-to-web-1.0.0.jar --host 0.0.0.0 --port 8080 --nvidia-smi /usr/bin/nvidia-smi
+java -jar target/nvidia-smi-to-web-1.0.0.jar --demo
 ```
 
-В Windows путь с пробелами заключайте в кавычки. По умолчанию `nvidia-smi` ищется через PATH процесса Java. Для служб PATH может отличаться от интерактивного терминала. Деморежим всегда явно отмечен в UI и API.
+Quote executable paths containing spaces. By default, the executable is resolved through the Java process's PATH, which may differ for system services. Demo mode is explicitly labeled in the UI, API and console.
 
-По умолчанию сервер слушает только loopback. `--host 0.0.0.0` открывает доступ из сети; встроенной аутентификации нет. Для доступа через интернет используйте reverse proxy с TLS и авторизацией.
+The server binds to loopback by default. Network mode has no built-in authentication; use a reverse proxy with TLS and authentication for internet access.
 
-## Данные и память
+## Dashboard
 
-Один последовательный опрос всех GPU с задержкой 2 с после завершения предыдущего, таймаут процесса 5 с. Поэтому фактический шаг — 2 с плюс время выполнения `nvidia-smi`. Два браузера не создают два опроса GPU. На ошибке сохраняются последние показания с признаком устаревания, а не добавляются фиктивные точки. Неподдерживаемые значения — `null` в API.
+Current readings for all GPUs appear first, followed by a separate history section. Charts show temperature, SM and memory clocks, GPU utilization, VRAM usage and power. Available periods: 1, 5, 10 and 15 minutes, 1 hour and 4 hours. The default is 5 minutes.
 
-На карту выделяется кольцевой буфер из 7200 точек: timestamp `long` и 11 метрик `double`. Для двух карт массивы занимают 1 382 400 байт (около 1,32 МиБ), плюс небольшой служебный объём. Это не полное потребление JVM: JSON-ответы и веб-сервер требуют дополнительную память. Точки старше 4 ч не возвращаются. После перезапуска история исчезает. Отсутствующие более 4 ч карты удаляются; лимит 64 UUID ограничивает рост памяти.
+## Sampling and memory
 
-Метрики: температура GPU, частоты SM и памяти, VRAM used/total, загрузка GPU, мощность/лимит, вентилятор, поколение и ширина PCIe. UUID — идентификатор карты. На пассивных Tesla датчик вентилятора может быть недоступен. Температура памяти и причины троттлинга в текущую версию не входят.
+One collector polls all GPUs with a 2-second delay after each completed poll and a 5-second process timeout. Actual spacing is 2 seconds plus command execution time. Multiple browsers share the collector. On failure, last successful readings are marked stale and no duplicate history points are added. Unsupported values become `null` in the API.
+
+Each GPU has a 7200-point ring buffer of primitive arrays: a `long` timestamp and 11 `double` metrics per point. Two GPUs require 1,382,400 bytes (about 1.32 MiB), plus small object overhead. Total JVM memory is higher due to runtime, HTTP and JSON allocations.
+
+Points older than 4 hours are excluded. History is lost on restart. GPUs absent for over 4 hours are removed; a 64-UUID limit bounds memory growth.
+
+Metrics: temperature, SM/memory clocks, used/total VRAM, GPU utilization, power draw/limit, fan speed and current PCIe generation/width. UUID identifies each GPU. Passive Tesla cards may not report fan speed. Memory temperature and throttle reasons are not included.
 
 ## API
 
-- `GET /api/gpus` — актуальные карты и история. `metrics` задаёт порядок `values`; каждая строка `history` — `[timestampMillis, ...values]`.
-- `GET /api/gpus?since=timestampMillis` — только точки строго новее timestamp. UI загружает историю один раз, затем получает приращения.
-- `GET /api/health` — 200 при свежем успешном опросе, иначе 503; содержит `demo`.
+- `GET /api/gpus`: current readings and history. `metrics` defines the order of `values`; each history row is `[timestampMillis, ...values]`.
+- `GET /api/gpus?since=timestampMillis`: points strictly newer than the timestamp. The UI loads full history initially, then increments.
+- `GET /api/health`: HTTP 200 for fresh successful readings, otherwise 503; includes `demo`.
 
-## Проверки
+## Tests
 
 ```powershell
 ./test.ps1
@@ -60,4 +72,4 @@ java -jar target/tesla-monitor-1.0.0.jar --demo
 sh test.sh
 ```
 
-Проверяется CSV, недоступные датчики, кольцевой буфер и временное окно. Для проверки интерфейса без NVIDIA используйте `--demo`; реальные датчики проверяйте запуском без этого флага.
+Checks cover CSV parsing, unavailable sensors, ring-buffer rollover, expiration, incremental JSON, and process output/error/timeout handling. Use `--demo` to inspect the UI without NVIDIA hardware. Verify actual sensors by running without that flag.

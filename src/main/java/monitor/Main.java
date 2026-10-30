@@ -40,7 +40,7 @@ public final class Main {
         for (int i=0; i<args.length; i++) {
             if (args[i].equals("--demo")) options.put("demo", "true");
             else if (Set.of("--host", "--port", "--nvidia-smi").contains(args[i]) && i+1<args.length) options.put(args[i].substring(2), args[++i]);
-            else throw new IllegalArgumentException("Usage: java -jar tesla-monitor.jar [--host 127.0.0.1] [--port 8080] [--nvidia-smi path] [--demo]");
+            else throw new IllegalArgumentException("Usage: java -jar nvidia-smi-to-web.jar [--host 127.0.0.1] [--port 8080] [--nvidia-smi path] [--demo]");
         }
         Main app = new Main(options.getOrDefault("nvidia-smi", "nvidia-smi"), options.containsKey("demo"));
         String host = options.getOrDefault("host", "127.0.0.1");
@@ -50,7 +50,7 @@ public final class Main {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> { server.stop(0); app.sampler.shutdownNow(); app.io.shutdownNow(); }));
         app.sampler.scheduleWithFixedDelay(app::sample, 0, 2, TimeUnit.SECONDS);
         server.start();
-        System.out.println("Tesla Monitor: http://" + host + ":" + server.getAddress().getPort() + (app.demo ? " [DEMO — synthetic data]" : ""));
+        System.out.println("nvidia-smi-to-web: http://" + host + ":" + server.getAddress().getPort() + (app.demo ? " [DEMO — synthetic data]" : ""));
     }
 
     void sample() {
