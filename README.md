@@ -1,75 +1,141 @@
 # nvidia-smi-to-web
 
-A lightweight NVIDIA GPU dashboard using Java 21+ and the embedded JDK HTTP server, with no third-party runtime dependencies. Targets Windows 11 and Ubuntu 26.x on x86-64.
+A lightweight web application that exposes NVIDIA's `nvidia-smi` readings through a browser interface. Its purpose is to make GPU monitoring accessible without opening a shell—especially when GPUs run on a remote machine and you do not have shell access to it. Once the application is running on that machine and its web endpoint is reachable, you can check GPU metrics and recent history from your browser.
 
-[GitHub repository](https://github.com/exadmin/nvidia-smi-to-web)
+Built with Java 21 and the JDK's embedded HTTP server, it collects readings by running `nvidia-smi` locally on the GPU host. It works on Windows 11 and Ubuntu 26.x (x86-64).
 
-Requires an NVIDIA driver compatible with your GPU and OS, and `nvidia-smi`. Python, NVML bindings and CUDA Toolkit are not required.
+- Live temperature, GPU utilization, power, SM/memory clocks and VRAM usage.
+- History charts grouped by metric, with consistent colors and legends for each GPU.
+- Up to 4 hours of in-memory history; selectable periods from 1 minute to 4 hours (default: 5 minutes).
+- Asynchronous updates that preserve page scroll position.
+- No database, Python, CUDA Toolkit or third-party Java runtime dependencies.
 
-## Build and run
+History is cleared when the application stops. Metrics unavailable on a GPU, such as fan speed on passive Tesla cards, appear as “no data”.
 
-With Maven:
+## Requirements
+
+- Java 21 or newer, including the `jdk.httpserver` module. A standard JDK installation includes it.
+- An NVIDIA driver compatible with your GPU and OS, with a working `nvidia-smi` command.
+
+Check your environment:
+
+```sh
+java -version
+nvidia-smi
+```
+
+## Run a prebuilt JAR
+
+Prebuilt JARs will be available on the [GitHub Releases page](https://github.com/exadmin/nvidia-smi-to-web/releases). **No release assets have been published yet**; for now, use the source-build instructions below or a JAR provided separately.
+
+Download `nvidia-smi-to-web-1.0.0.jar`, open a terminal in its directory, and run the same command on Windows or Ubuntu:
+
+```sh
+java -jar nvidia-smi-to-web-1.0.0.jar
+```
+
+Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser. Keep the terminal running; press **Ctrl+C** to stop. If you download another version, substitute its JAR filename in the command.
+
+To preview the dashboard without NVIDIA hardware:
+
+```sh
+java -jar nvidia-smi-to-web-1.0.0.jar --demo
+```
+
+Demo mode is clearly labeled and uses synthetic values.
+
+## Build from source
+
+Install a **JDK 21+** with `javac` and `jar`, then clone the repository:
+
+```sh
+git clone https://github.com/exadmin/nvidia-smi-to-web.git
+cd nvidia-smi-to-web
+```
+
+Choose one build method.
+
+### Maven
+
+Requires Maven in addition to the JDK:
 
 ```sh
 mvn package
-java -jar target/nvidia-smi-to-web-1.0.0.jar
 ```
 
-Without Maven, using standard JDK tools on Windows PowerShell:
+### Windows PowerShell, without Maven
 
 ```powershell
-./build.ps1
-java -jar target/nvidia-smi-to-web-1.0.0.jar
+.\build.ps1
 ```
 
-On Ubuntu:
+### Ubuntu, without Maven
 
 ```sh
 sh build.sh
+```
+
+All methods produce `target/nvidia-smi-to-web-1.0.0.jar`, with the web resources included. Run it with:
+
+```sh
 java -jar target/nvidia-smi-to-web-1.0.0.jar
 ```
 
-Open [localhost:8080](http://127.0.0.1:8080). The same JAR runs on both platforms with Java 21+ installed.
+The same JAR works on both operating systems with a compatible Java installation.
 
-Options:
+## Configuration
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `--host` | `127.0.0.1` | Address to listen on |
+| `--port` | `8080` | HTTP port |
+| `--nvidia-smi` | `nvidia-smi` | Executable name or full path |
+| `--demo` | Off | Use synthetic GPU data |
+
+Example on Ubuntu:
 
 ```sh
-java -jar target/nvidia-smi-to-web-1.0.0.jar --host 0.0.0.0 --port 8080 --nvidia-smi /usr/bin/nvidia-smi
-java -jar target/nvidia-smi-to-web-1.0.0.jar --demo
+java -jar nvidia-smi-to-web-1.0.0.jar --port 9090 --nvidia-smi /usr/bin/nvidia-smi
 ```
 
-Quote executable paths containing spaces. By default, the executable is resolved through the Java process's PATH, which may differ for system services. Demo mode is explicitly labeled in the UI, API and console.
+On Windows, quote paths containing spaces:
 
-The server binds to loopback by default. Network mode has no built-in authentication; use a reverse proxy with TLS and authentication for internet access.
+```powershell
+java -jar nvidia-smi-to-web-1.0.0.jar --nvidia-smi "C:\path with spaces\nvidia-smi.exe"
+```
 
-## Dashboard
+The executable is normally resolved through the Java process's PATH. If it cannot be found, pass its actual full path with `--nvidia-smi`.
 
-Current readings for all GPUs appear first, followed by a separate history section. Charts show temperature, SM and memory clocks, GPU utilization, VRAM usage and power. Available periods: 1, 5, 10 and 15 minutes, 1 hour and 4 hours. The default is 5 minutes.
+To allow connections from other machines, add `--host 0.0.0.0` and open the chosen TCP port in your firewall. There is no built-in authentication; use a reverse proxy with TLS and authentication for internet access.
 
-## Sampling and memory
+## Sampling and API
 
-One collector polls all GPUs with a 2-second delay after each completed poll and a 5-second process timeout. Actual spacing is 2 seconds plus command execution time. Multiple browsers share the collector. On failure, last successful readings are marked stale and no duplicate history points are added. Unsupported values become `null` in the API.
+One collector polls all GPUs, waiting 2 seconds after each completed poll. The process timeout is 5 seconds, so actual sample spacing includes command execution time. Multiple browsers share the same collector. Failed polls mark readings stale without inserting duplicate history points.
 
-Each GPU has a 7200-point ring buffer of primitive arrays: a `long` timestamp and 11 `double` metrics per point. Two GPUs require 1,382,400 bytes (about 1.32 MiB), plus small object overhead. Total JVM memory is higher due to runtime, HTTP and JSON allocations.
+Each GPU retains up to 7200 samples in primitive-array ring buffers. For two GPUs, the history arrays occupy about **1.32 MiB**, excluding JVM, HTTP and JSON overhead. Points older than 4 hours are excluded.
 
-Points older than 4 hours are excluded. History is lost on restart. GPUs absent for over 4 hours are removed; a 64-UUID limit bounds memory growth.
-
-Metrics: temperature, SM/memory clocks, used/total VRAM, GPU utilization, power draw/limit, fan speed and current PCIe generation/width. UUID identifies each GPU. Passive Tesla cards may not report fan speed. Memory temperature and throttle reasons are not included.
-
-## API
-
-- `GET /api/gpus`: current readings and history. `metrics` defines the order of `values`; each history row is `[timestampMillis, ...values]`.
-- `GET /api/gpus?since=timestampMillis`: points strictly newer than the timestamp. The UI loads full history initially, then increments.
-- `GET /api/health`: HTTP 200 for fresh successful readings, otherwise 503; includes `demo`.
+- `GET /api/gpus`: current readings and history. `metrics` defines the order of `values`; history rows are `[timestampMillis, ...values]`.
+- `GET /api/gpus?since=timestampMillis`: history points strictly newer than the timestamp.
+- `GET /api/health`: HTTP 200 for fresh successful readings, otherwise 503. Includes a `demo` flag.
 
 ## Tests
 
+Java tests on Windows:
+
 ```powershell
-./test.ps1
+.\test.ps1
 ```
+
+Java tests on Ubuntu:
 
 ```sh
 sh test.sh
 ```
 
-Checks cover CSV parsing, unavailable sensors, ring-buffer rollover, expiration, incremental JSON, and process output/error/timeout handling. Use `--demo` to inspect the UI without NVIDIA hardware. Verify actual sensors by running without that flag.
+Dashboard regression checks require Node.js and run from the repository root:
+
+```sh
+node src/test/js/dashboard.test.cjs
+```
+
+Tests cover parsing, unavailable sensors, ring-buffer retention, incremental history, process errors/timeouts, and stable dashboard elements during updates. Real hardware readings must be verified on the target machine without `--demo`.

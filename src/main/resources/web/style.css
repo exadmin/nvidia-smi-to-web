@@ -13,3 +13,6 @@ header{position:relative;padding-right:80px}
 .github-link:hover{background:#192536;color:#63d4c1}
 .github-link:focus-visible{outline:2px solid #63d4c1;outline-offset:3px}
 @media(max-width:600px){header{padding-right:66px;gap:8px}header h1{font-size:22px;overflow-wrap:anywhere}.github-link{top:9px;right:18px}}
+
+footer{text-align:center}
+.chart-title strong{font-size:13px}

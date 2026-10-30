@@ -4,6 +4,9 @@ const state = new Map();
 let cursor = 0, busy = false, latest = null;
 const format = (v, unit='', digits=0) => v == null ? 'no data' : `${v.toLocaleString('en-US',{maximumFractionDigits:digits})}${unit}`;
 const clock = t => new Date(t).toLocaleTimeString('en-US');
+const axisClock = t => new Intl.DateTimeFormat('en-GB', {
+  hour:'2-digit',minute:'2-digit',second:'2-digit',hourCycle:'h23'
+}).format(t);
 function node(tag, cls, text) { const n=document.createElement(tag);if(cls)n.className=cls;if(text!=null)n.textContent=text;return n; }
 function metric(label,text,hot=false){const n=node('div','metric');n.append(node('span','',label),node('strong',hot?'hot':'',text));return n;}
 const views = new Map();
@@ -17,7 +20,8 @@ function colorFor(card){
 function createChart(parent, title, unit, column, ceiling) {
   const wrap=node('div','chart'), heading=node('div','chart-title');
   const scale=node('span'), canvas=node('canvas'), from=node('span'), to=node('span');
-  heading.append(node('strong','',title),scale);
+  const titleGroup=node('span','chart-heading');
+  titleGroup.append(node('strong','',title),scale);heading.append(titleGroup);
   canvas.setAttribute('role','img');canvas.setAttribute('aria-label',title+' over the selected period');
   const axis=node('div','axis');axis.append(from,to);
   const legend=node('div','legend');
@@ -40,18 +44,20 @@ function drawChart(view, cards, start, end) {
   const memoryIndex=latest.metrics.indexOf('memoryTotal');
   const ceiling=view.ceiling==='memory'?Math.max(0,...cards.map(card=>card.values[memoryIndex]||0)):view.ceiling;
   const max=Math.max(ceiling||0,peak*(ceiling?1:1.15));
-  scale.textContent=`0–${Math.ceil(max)} ${unit}`;
-  from.textContent=clock(start);to.textContent=clock(end);
+  scale.textContent=` (0–${Math.ceil(max)} ${unit})`;
+  from.textContent=`[ ${axisClock(start)} ...`;to.textContent=`... ${axisClock(end)} ]`;
   const width=canvas.getBoundingClientRect().width || 500,height=160,dpr=window.devicePixelRatio||1;
   canvas.width=width*dpr;canvas.height=height*dpr;
   const c=canvas.getContext('2d');c.scale(dpr,dpr);c.strokeStyle='#28374d';c.lineWidth=1;
-  const left=78,right=8,top=12,bottom=height-8;
+  const left=78,right=78,top=12,bottom=height-8;
   const plotWidth=Math.max(1,width-left-right),plotHeight=bottom-top;
   c.font='11px system-ui';c.textAlign='right';c.textBaseline='middle';
   for(let tick=0;tick<=4;tick++){
     const value=max*tick/4,y=bottom-tick/4*plotHeight;
     c.beginPath();c.moveTo(left,y);c.lineTo(width-right,y);c.stroke();
-    c.fillStyle='#96a6bd';c.fillText(format(value,' '+unit,value<10?1:0),left-8,y);
+    const label=format(value,' '+unit,value<10?1:0);
+    c.fillStyle='#96a6bd';c.textAlign='right';c.fillText(label,left-8,y);
+    c.textAlign='left';c.fillText(label,width-right+8,y);
   }
   for(const {color,points} of series){
     c.strokeStyle=color;c.lineWidth=1.7;c.beginPath();let previous=null;
@@ -97,7 +103,8 @@ function render(){
     const stale=card.stale || now-card.lastSeen>6000;
     view.box.classList.toggle('stale',stale);
     view.title.textContent=`#${card.index}  ${card.name}`;
-    view.badge.textContent=stale?'Stale data':`Updated ${clock(card.lastSeen)}`;
+    view.badge.hidden=!stale;
+    view.badge.textContent=stale?'Stale data':'';
     const texts=[format(values.temperature,' °C'),format(values.utilization,' %'),
       values.power==null?'no data':`${format(values.power,' W')} / ${format(values.powerLimit,' W')}`,
       format(values.smClock,' MHz'),format(values.memoryClock,' MHz'),
@@ -126,10 +133,11 @@ async function poll(){
     }
     for(const uuid of state.keys())if(!data.cards.some(c=>c.uuid===uuid))state.delete(uuid);
     cursor=nextCursor;latest=data;
-    $('#status').textContent=data.demo?'DEMO · synthetic data':data.error?'Polling error':'Monitoring active';
+    $('#status').hidden=!data.demo&&!data.error;
+    $('#status').textContent=data.demo?'DEMO · synthetic data':data.error?'Polling error':'';
     const notice=$('#notice');notice.hidden=!data.error&&!data.demo;
     notice.textContent=[data.demo?'Demo mode: values are synthetic; hardware is not queried.':'',data.error].filter(Boolean).join('\n');render();
-  }catch(e){$('#status').textContent='Server disconnected';$('#notice').hidden=false;$('#notice').textContent=`Unable to refresh data: ${e.message}`;if(latest){for(const c of latest.cards)c.stale=true;render();}}
+  }catch(e){$('#status').hidden=false;$('#status').textContent='Server disconnected';$('#notice').hidden=false;$('#notice').textContent=`Unable to refresh data: ${e.message}`;if(latest){for(const c of latest.cards)c.stale=true;render();}}
   finally{busy=false;}
 }
 $('#range').addEventListener('change',render);window.addEventListener('resize',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
