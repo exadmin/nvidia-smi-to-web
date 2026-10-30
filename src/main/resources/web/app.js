@@ -103,6 +103,7 @@ function render(){
     const stale=card.stale || now-card.lastSeen>6000;
     view.box.classList.toggle('stale',stale);
     view.title.textContent=`#${card.index}  ${card.name}`;
+    view.title.className=`series-${colorFor(card)}`;
     view.badge.hidden=!stale;
     view.badge.textContent=stale?'Stale data':'';
     const texts=[format(values.temperature,' °C'),format(values.utilization,' %'),

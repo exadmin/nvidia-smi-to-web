@@ -12,6 +12,8 @@ Built with Java 21 and the JDK's embedded HTTP server, it collects readings by r
 
 History is cleared when the application stops. Metrics unavailable on a GPU, such as fan speed on passive Tesla cards, appear as “no data”.
 
+![NVIDIA GPU Telemetry dashboard showing two Tesla P100 GPUs and their metric history](docs/images/dashboard.png)
+
 ## Requirements
 
 - Java 21 or newer, including the `jdk.httpserver` module. A standard JDK installation includes it.

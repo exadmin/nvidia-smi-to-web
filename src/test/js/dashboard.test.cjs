@@ -45,5 +45,7 @@ assert.equal(elements.get('#graphs').children[0],firstGraphs[0]);
 assert.equal(firstGraphs.length,6);
 assert.equal(vm.runInContext('plots[0].entries.size',context),1);
 assert.equal(vm.runInContext("plots.every(p=>p.entries.get('GPU-b').className==='legend-entry series-1')",context),true);
+assert.equal(firstCards[0].querySelector('h3').className,'series-0');
+assert.equal(firstCards[1].querySelector('h3').className,'series-1');
 assert.equal(vm.runInContext("plots.map(p=>p.column).join(',')",context),'1,6,7,2,3,4');
 console.log('PASS: persistent cards/canvases, six metric rows, shared GPU colors, legend reconciliation');
