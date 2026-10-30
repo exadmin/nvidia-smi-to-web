@@ -1,0 +1,78 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - '**'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.created == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v5
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Node.js for dashboard tests
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build and test
+        run: |
+          sh test.sh
+          node --check src/main/resources/web/app.js
+          node src/test/js/dashboard.test.cjs
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p dist
+          cp target/nvidia-smi-to-web-1.0.0.jar dist/nvidia-smi-to-web.jar
+          cd dist
+          sha256sum nvidia-smi-to-web.jar > SHA256SUMS
+
+      - name: Smoke test packaged application
+        shell: bash
+        run: |
+          java -jar dist/nvidia-smi-to-web.jar --demo --port 18080 > target/smoke.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:18080/api/health > target/health.json; then
+              ready=true
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != true ]; then cat target/smoke.log; exit 1; fi
+          curl --fail --silent http://127.0.0.1:18080/api/gpus > target/gpus.json
+          node -e 'const fs=require("node:fs");const d=JSON.parse(fs.readFileSync("target/gpus.json","utf8"));if(!d.demo||d.cards.length!==2)process.exit(1);'
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/nvidia-smi-to-web.jar dist/SHA256SUMS --clobber
+          else
+            gh release create "$RELEASE_TAG" dist/nvidia-smi-to-web.jar dist/SHA256SUMS \
+              --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi

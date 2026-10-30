@@ -28,12 +28,12 @@ nvidia-smi
 
 ## Run a prebuilt JAR
 
-Prebuilt JARs will be available on the [GitHub Releases page](https://github.com/exadmin/nvidia-smi-to-web/releases). **No release assets have been published yet**; for now, use the source-build instructions below or a JAR provided separately.
+Download a prebuilt JAR from the [GitHub Releases page](https://github.com/exadmin/nvidia-smi-to-web/releases). Releases are built automatically when a new tag is pushed; until the first tag is published, build from source or use a JAR provided separately. Each release includes `nvidia-smi-to-web.jar` and its SHA-256 checksum in `SHA256SUMS`.
 
-Download `nvidia-smi-to-web-1.0.0.jar`, open a terminal in its directory, and run the same command on Windows or Ubuntu:
+Download `nvidia-smi-to-web.jar`, open a terminal in its directory, and run the same command on Windows or Ubuntu:
 
 ```sh
-java -jar nvidia-smi-to-web-1.0.0.jar
+java -jar nvidia-smi-to-web.jar
 ```
 
 Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser. Keep the terminal running; press **Ctrl+C** to stop. If you download another version, substitute its JAR filename in the command.
@@ -41,7 +41,7 @@ Open [http://127.0.0.1:8080](http://127.0.0.1:8080) in your browser. Keep the te
 To preview the dashboard without NVIDIA hardware:
 
 ```sh
-java -jar nvidia-smi-to-web-1.0.0.jar --demo
+java -jar nvidia-smi-to-web.jar --demo
 ```
 
 Demo mode is clearly labeled and uses synthetic values.
@@ -97,13 +97,13 @@ The same JAR works on both operating systems with a compatible Java installation
 Example on Ubuntu:
 
 ```sh
-java -jar nvidia-smi-to-web-1.0.0.jar --port 9090 --nvidia-smi /usr/bin/nvidia-smi
+java -jar nvidia-smi-to-web.jar --port 9090 --nvidia-smi /usr/bin/nvidia-smi
 ```
 
 On Windows, quote paths containing spaces:
 
 ```powershell
-java -jar nvidia-smi-to-web-1.0.0.jar --nvidia-smi "C:\path with spaces\nvidia-smi.exe"
+java -jar nvidia-smi-to-web.jar --nvidia-smi "C:\path with spaces\nvidia-smi.exe"
 ```
 
 The executable is normally resolved through the Java process's PATH. If it cannot be found, pass its actual full path with `--nvidia-smi`.
@@ -141,3 +141,27 @@ node src/test/js/dashboard.test.cjs
 ```
 
 Tests cover parsing, unavailable sensors, ring-buffer retention, incremental history, process errors/timeouts, and stable dashboard elements during updates. Real hardware readings must be verified on the target machine without `--demo`.
+
+## Publishing a release
+
+1. Commit the release changes and push them to GitHub, including the release workflow:
+
+```sh
+git add .
+git commit -m "Prepare release v1.0.0"
+git push origin master
+```
+
+2. Create a new version tag and push it:
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Use a new, unique version for each release, for example `v1.0.1` for the next one. If all changes are already committed, skip the `git add` and `git commit` commands.
+
+3. Follow the **Build and publish release** workflow on the [Actions page](https://github.com/exadmin/nvidia-smi-to-web/actions/workflows/release.yml).
+4. Once it succeeds, open [Releases](https://github.com/exadmin/nvidia-smi-to-web/releases) and download `nvidia-smi-to-web.jar`. The `SHA256SUMS` asset contains its checksum.
+
+The release workflow runs Java and dashboard tests on Java 21, smoke-tests the packaged application in demo mode, and publishes a GitHub Release with the JAR and checksum only after all checks pass. It uses the built-in `GITHUB_TOKEN`; no additional secret is required. Any new tag triggers the workflow; moving an existing tag does not. Rerunning a successful release job replaces assets on that tag's existing release.
