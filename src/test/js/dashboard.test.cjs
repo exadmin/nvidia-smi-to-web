@@ -32,6 +32,9 @@ assert.deepEqual(elements.get('#cards').children,firstCards);
 assert.deepEqual(elements.get('#graphs').children,firstGraphs);
 assert.equal(firstGraphs[0].querySelector('canvas'),firstCanvas);
 assert.equal(firstCards[0].querySelector('strong').textContent,'55 °C');
+assert.equal(vm.runInContext("views.get('GPU-a').fields.map(field=>field.textContent).join('|')",context),
+  '55 °C|20 %|90 W / 250 W|1,200 MHz|715 MHz|1 / 16 GiB');
+assert.equal(firstGraphs[0].querySelector('strong').textContent,'Temperature');
 elements.get('#range').value='60000';
 vm.runInContext('render()',context);
 assert.equal(firstGraphs[0].querySelector('canvas'),firstCanvas);

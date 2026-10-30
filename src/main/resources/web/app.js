@@ -17,7 +17,7 @@ function colorFor(card){
 function createChart(parent, title, unit, column, ceiling) {
   const wrap=node('div','chart'), heading=node('div','chart-title');
   const scale=node('span'), canvas=node('canvas'), from=node('span'), to=node('span');
-  heading.append(node('span','',title),scale);
+  heading.append(node('strong','',title),scale);
   canvas.setAttribute('role','img');canvas.setAttribute('aria-label',title+' over the selected period');
   const axis=node('div','axis');axis.append(from,to);
   const legend=node('div','legend');
@@ -45,15 +45,22 @@ function drawChart(view, cards, start, end) {
   const width=canvas.getBoundingClientRect().width || 500,height=160,dpr=window.devicePixelRatio||1;
   canvas.width=width*dpr;canvas.height=height*dpr;
   const c=canvas.getContext('2d');c.scale(dpr,dpr);c.strokeStyle='#28374d';c.lineWidth=1;
-  for(let y=20;y<height;y+=40){c.beginPath();c.moveTo(0,y);c.lineTo(width,y);c.stroke();}
+  const left=78,right=8,top=12,bottom=height-8;
+  const plotWidth=Math.max(1,width-left-right),plotHeight=bottom-top;
+  c.font='11px system-ui';c.textAlign='right';c.textBaseline='middle';
+  for(let tick=0;tick<=4;tick++){
+    const value=max*tick/4,y=bottom-tick/4*plotHeight;
+    c.beginPath();c.moveTo(left,y);c.lineTo(width-right,y);c.stroke();
+    c.fillStyle='#96a6bd';c.fillText(format(value,' '+unit,value<10?1:0),left-8,y);
+  }
   for(const {color,points} of series){
     c.strokeStyle=color;c.lineWidth=1.7;c.beginPath();let previous=null;
     for(const p of points){if(p[0]<start)continue;const v=p[column];if(v==null){previous=null;continue;}
-      const x=(p[0]-start)/(end-start)*width,y=height-8-v/max*(height-20);
+      const x=left+(p[0]-start)/(end-start)*plotWidth,y=bottom-v/max*plotHeight;
       if(previous==null || p[0]-previous>6500)c.moveTo(x,y);else c.lineTo(x,y);previous=p[0];
     }c.stroke();
   }
-  if(!count){c.fillStyle='#96a6bd';c.font='13px system-ui';c.fillText('No data yet',15,80);}
+  if(!count){c.fillStyle='#96a6bd';c.font='13px system-ui';c.textAlign='left';c.fillText('No data yet',left+12,80);}
 }
 function ensurePlots(){
   if(plots)return;
@@ -68,7 +75,7 @@ function createView(card) {
   const title=node('h3'),badge=node('span','badge');
   name.append(title,node('p','uuid',card.uuid));heading.append(name,badge);box.append(heading);
   const metrics=node('div','metrics');
-  const labels=['Temperature','SM clock','Memory clock','GPU utilization','VRAM','Power'];
+  const labels=['Temperature','GPU utilization','Power','SM clock','Memory clock','VRAM'];
   const fields=labels.map(label=>{const item=metric(label,'no data');metrics.append(item);return item.querySelector('strong');});
   const details=node('p','details'),warning=node('p','hot','High temperature: check GPU cooling and airflow.');
   warning.hidden=true;box.append(metrics,details,warning);$('#cards').append(box);
@@ -91,9 +98,10 @@ function render(){
     view.box.classList.toggle('stale',stale);
     view.title.textContent=`#${card.index}  ${card.name}`;
     view.badge.textContent=stale?'Stale data':`Updated ${clock(card.lastSeen)}`;
-    const texts=[format(values.temperature,' °C'),format(values.smClock,' MHz'),format(values.memoryClock,' MHz'),format(values.utilization,' %'),
-      values.memoryUsed==null||values.memoryTotal==null?'no data':`${format(values.memoryUsed/1024,'',1)} / ${format(values.memoryTotal/1024,' GiB',1)}`,
-      values.power==null?'no data':`${format(values.power,' W')} / ${format(values.powerLimit,' W')}`];
+    const texts=[format(values.temperature,' °C'),format(values.utilization,' %'),
+      values.power==null?'no data':`${format(values.power,' W')} / ${format(values.powerLimit,' W')}`,
+      format(values.smClock,' MHz'),format(values.memoryClock,' MHz'),
+      values.memoryUsed==null||values.memoryTotal==null?'no data':`${format(values.memoryUsed/1024,'',1)} / ${format(values.memoryTotal/1024,' GiB',1)}`];
     texts.forEach((text,i)=>{view.fields[i].textContent=text;});
     view.fields[0].classList.toggle('hot',values.temperature>=80);
     view.details.textContent=`PCIe: ${values.pcieGeneration==null?'—':`Gen ${values.pcieGeneration}`} ×${values.pcieWidth??'—'} · Fan: ${format(values.fan,' %')} · Measured: ${clock(card.lastSeen)}`;
