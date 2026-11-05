@@ -1,5 +1,6 @@
 'use strict';
 const $ = s => document.querySelector(s);
+const POLL_INTERVALS = [2, 3, 4, 5, 10];
 const state = new Map();
 let cursor = 0, busy = false, latest = null;
 const format = (v, unit='', digits=0) => v == null ? 'no data' : `${v.toLocaleString('en-US',{maximumFractionDigits:digits})}${unit}`;
@@ -143,3 +144,67 @@ async function poll(){
 }
 $('#range').addEventListener('change',render);window.addEventListener('resize',render);document.addEventListener('visibilitychange',()=>{if(!document.hidden)poll();});
 poll();setInterval(poll,2000);
+
+// Polling-interval selector: a clickable control that opens a combobox of
+// allowed values (2, 3, 4, 5, 10 seconds). The chosen value is sent to the
+// backend, which validates it strictly and resamples nvsmi at that period.
+function initPollInterval() {
+  const trigger = $('#poll-interval');
+  if (!trigger) return;
+  let panel = null;
+
+  function updateText(seconds) { trigger.textContent = seconds + ' seconds'; }
+
+  async function refresh() {
+    try {
+      const resp = await fetch('/api/poll-interval');
+      if (resp.ok) { const d = await resp.json(); updateText(d.seconds); }
+    } catch (e) { /* ignore */ }
+  }
+
+  function closePanel() { if (panel) { panel.remove(); panel = null; } trigger.setAttribute('aria-expanded', 'false'); }
+
+  function positionPanel(el) {
+    const r = trigger.getBoundingClientRect();
+    el.style.position = 'fixed';
+    el.style.left = r.left + 'px';
+    el.style.top = Math.round(r.bottom) + 4 + 'px';
+  }
+
+  trigger.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (panel) return;
+    await refresh();
+    panel = node('div', 'poll-panel');
+    const select = node('select', 'poll-select');
+    select.setAttribute('role', 'listbox');
+    for (const v of POLL_INTERVALS) {
+      const opt = node('option', null, v + ' seconds');
+      opt.value = String(v);
+      select.append(opt);
+    }
+    select.addEventListener('change', async () => {
+      const value = parseInt(select.value, 10);
+      try {
+        const resp = await fetch('/api/poll-interval', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seconds: value })
+        });
+        if (resp.ok) { const d = await resp.json(); updateText(d.seconds); closePanel(); }
+        else { trigger.textContent = 'Invalid value'; setTimeout(refresh, 800); }
+      } catch (e) { trigger.textContent = 'Unavailable'; setTimeout(refresh, 800); }
+    });
+    panel.append(select);
+    document.body.append(panel);
+    positionPanel(panel);
+    trigger.setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => select.focus());
+    const onOutside = (e) => { if (!panel.contains(e.target) && e.target !== trigger) { closePanel(); document.removeEventListener('click', onOutside); } };
+    document.addEventListener('click', onOutside);
+  });
+
+  window.addEventListener('beforeunload', closePanel);
+  refresh();
+}
+initPollInterval();

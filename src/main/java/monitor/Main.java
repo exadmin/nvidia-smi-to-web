@@ -8,6 +8,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class Main {
     static final String[] METRICS = {"temperature", "smClock", "memoryClock", "memoryUsed", "memoryTotal", "utilization", "power", "powerLimit", "fan", "pcieGeneration", "pcieWidth"};
@@ -29,6 +31,10 @@ public final class Main {
     final Map<String, History> cards = new LinkedHashMap<>();
     final ExecutorService io = Executors.newVirtualThreadPerTaskExecutor();
     final ScheduledExecutorService sampler = Executors.newSingleThreadScheduledExecutor();
+    static final Set<Integer> ALLOWED_POLL_SECONDS = Set.of(2, 3, 4, 5, 10);
+    static final Pattern POLL_INTERVAL_PATTERN = Pattern.compile("\"seconds\"\\s*:\s*(\\d+)(?![\\w.])");
+    volatile int pollIntervalSeconds = 2;
+    volatile ScheduledFuture<?> pollTask;
     final String executable;
     final boolean demo;
     String error;
@@ -48,9 +54,22 @@ public final class Main {
         server.setExecutor(app.io);
         server.createContext("/", app::handle);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> { server.stop(0); app.sampler.shutdownNow(); app.io.shutdownNow(); }));
-        app.sampler.scheduleWithFixedDelay(app::sample, 0, 2, TimeUnit.SECONDS);
+        app.startSampling();
         server.start();
         System.out.println("nvidia-smi-to-web: http://" + host + ":" + server.getAddress().getPort() + (app.demo ? " [DEMO — synthetic data]" : ""));
+    }
+
+    void startSampling() {
+        pollTask = sampler.scheduleWithFixedDelay(this::sample, 0, pollIntervalSeconds, TimeUnit.SECONDS);
+    }
+
+    synchronized void setIntervalSeconds(int seconds) {
+        this.pollIntervalSeconds = seconds;
+        ScheduledFuture<?> task = pollTask;
+        if (task != null) {
+            task.cancel(false);
+            pollTask = sampler.scheduleWithFixedDelay(this::sample, 0, seconds, TimeUnit.SECONDS);
+        }
     }
 
     void sample() {
@@ -165,8 +184,11 @@ public final class Main {
     }
     void handle(HttpExchange x) throws IOException {
         try {
-            if(!x.getRequestMethod().equals("GET")){x.getResponseHeaders().set("Allow","GET");send(x,405,"application/json","{\"error\":\"GET required\"}".getBytes(StandardCharsets.UTF_8));return;}
             String path=x.getRequestURI().getPath();
+            if(path.equals("/api/poll-interval")) {
+                handlePollInterval(x);
+            } else if(!x.getRequestMethod().equals("GET")){x.getResponseHeaders().set("Allow","GET");send(x,405,"application/json","{\"error\":\"GET required\"}".getBytes(StandardCharsets.UTF_8));return;
+            }
             if(path.equals("/api/gpus")) {
                 long since=0; String query=x.getRequestURI().getRawQuery();
                 if(query!=null)for(String p:query.split("&"))if(p.startsWith("since="))since=Long.parseLong(p.substring(6));
@@ -183,6 +205,27 @@ public final class Main {
             } else send(x,404,"text/plain","Not found".getBytes(StandardCharsets.UTF_8));
         } catch(NumberFormatException e){send(x,400,"application/json","{\"error\":\"Invalid since timestamp\"}".getBytes(StandardCharsets.UTF_8));}
         finally{x.close();}
+    }
+    void handlePollInterval(HttpExchange x) throws IOException {
+        String body;
+        try { body = new String(x.getRequestBody().readAllBytes(), StandardCharsets.UTF_8); }
+        catch (IOException e) { send(x,400,"application/json","{\"error\":\"Empty request body\"}".getBytes(StandardCharsets.UTF_8)); return; }
+        if("GET".equals(x.getRequestMethod())) {
+            send(x,200,"application/json",("{\"seconds\":"+pollIntervalSeconds+"}").getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        if(!"POST".equals(x.getRequestMethod())) { x.getResponseHeaders().set("Allow","GET, POST"); send(x,405,"application/json","{\"error\":\"Method not allowed\"}".getBytes(StandardCharsets.UTF_8)); return; }
+        Matcher m = POLL_INTERVAL_PATTERN.matcher(body);
+        if(!m.find()) { send(x,400,"application/json","{\"error\":\"Invalid poll interval. Allowed values: 2, 3, 4, 5, 10 seconds.\"}".getBytes(StandardCharsets.UTF_8)); return; }
+        int seconds;
+        try { seconds = Integer.parseInt(m.group(1)); }
+        catch (NumberFormatException e) { send(x,400,"application/json","{\"error\":\"Invalid poll interval. Allowed values: 2, 3, 4, 5, 10 seconds.\"}".getBytes(StandardCharsets.UTF_8)); return; }
+        if(!ALLOWED_POLL_SECONDS.contains(seconds)) {
+            send(x,400,"application/json","{\"error\":\"Invalid poll interval. Allowed values: 2, 3, 4, 5, 10 seconds.\"}".getBytes(StandardCharsets.UTF_8));
+            return;
+        }
+        setIntervalSeconds(seconds);
+        send(x,200,"application/json",("{\"seconds\":"+seconds+"}").getBytes(StandardCharsets.UTF_8));
     }
     static void send(HttpExchange x,int status,String type,byte[] bytes)throws IOException {
         x.getResponseHeaders().set("Content-Type",type+"; charset=utf-8");x.getResponseHeaders().set("Cache-Control","no-store");

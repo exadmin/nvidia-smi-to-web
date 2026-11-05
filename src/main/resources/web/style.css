@@ -16,3 +16,7 @@ header{position:relative;padding-right:80px}
 
 footer{text-align:center}
 .chart-title strong{font-size:13px}
+.poll-interval{background:transparent;border:0;padding:0 2px 1px;color:#63d4c1;font:inherit;font-size:14px;font-weight:600;cursor:pointer;border-radius:0;padding-bottom:1px}
+.poll-interval:hover{background:#192536;border-radius:6px;color:#a1ecdf}
+.poll-interval:focus-visible{outline:2px solid #63d4c1;outline-offset:2px}
+.poll-select{z-index:20;min-width:140px}
