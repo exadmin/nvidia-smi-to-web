@@ -152,8 +152,9 @@ function initPollInterval() {
   const trigger = $('#poll-interval');
   if (!trigger) return;
   let panel = null;
+  let currentSeconds = 2;
 
-  function updateText(seconds) { trigger.textContent = seconds + ' seconds'; }
+  function updateText(seconds) { trigger.textContent = seconds + ' seconds'; currentSeconds = seconds; }
 
   async function refresh() {
     try {
@@ -162,7 +163,15 @@ function initPollInterval() {
     } catch (e) { /* ignore */ }
   }
 
-  function closePanel() { if (panel) { panel.remove(); panel = null; } trigger.setAttribute('aria-expanded', 'false'); }
+  const onOutside = (e) => {
+    if (panel && !panel.contains(e.target) && e.target !== trigger) { closePanel(); }
+  };
+
+  function closePanel() {
+    if (panel) { panel.remove(); panel = null; }
+    trigger.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', onOutside);
+  }
 
   function positionPanel(el) {
     const r = trigger.getBoundingClientRect();
@@ -181,6 +190,7 @@ function initPollInterval() {
     for (const v of POLL_INTERVALS) {
       const opt = node('option', null, v + ' seconds');
       opt.value = String(v);
+      if (v === currentSeconds) opt.selected = true;
       select.append(opt);
     }
     select.addEventListener('change', async () => {
@@ -200,7 +210,6 @@ function initPollInterval() {
     positionPanel(panel);
     trigger.setAttribute('aria-expanded', 'true');
     requestAnimationFrame(() => select.focus());
-    const onOutside = (e) => { if (!panel.contains(e.target) && e.target !== trigger) { closePanel(); document.removeEventListener('click', onOutside); } };
     document.addEventListener('click', onOutside);
   });
 
