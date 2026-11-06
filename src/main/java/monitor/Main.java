@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.*;
 import java.net.InetSocketAddress;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
@@ -189,7 +190,45 @@ public final class Main {
                 handlePollInterval(x);
             } else if(!x.getRequestMethod().equals("GET")){x.getResponseHeaders().set("Allow","GET");send(x,405,"application/json","{\"error\":\"GET required\"}".getBytes(StandardCharsets.UTF_8));return;
             }
-            if(path.equals("/api/gpus")) {
+            if(path.equals("/api/runtime")) {
+                String metrics=null, query=x.getRequestURI().getRawQuery();
+                if(query!=null) for(String p:query.split("&")) {
+                    String[] pair=p.split("=",2);
+                    if(pair[0].equals("metrics")) metrics=URLDecoder.decode(pair.length==2?pair[1]:"",StandardCharsets.UTF_8);
+                }
+                Map<String,Integer> requested=new LinkedHashMap<>();
+                if(metrics!=null) for(String id:metrics.split(",",-1)) requested.put(id.trim(),Arrays.asList(METRICS).indexOf(id.trim()));
+                if(requested.isEmpty() || requested.containsValue(-1)) {
+                    send(x,400,"application/json","{\"error\":\"Unknown or missing metrics\"}".getBytes(StandardCharsets.UTF_8));
+                    return;
+                }
+                StringBuilder result=new StringBuilder("{\"gpus\":[");
+                synchronized(this) {
+                    long cutoff=System.currentTimeMillis()-14_400_000L;
+                    List<History> runtimeCards=cards.values().stream()
+                        .filter(h->h.latest!=null && h.lastSeen>=cutoff).toList();
+                    boolean firstGpu=true;
+                    for(History h:runtimeCards) {
+                        if(!firstGpu) result.append(',');
+                        firstGpu=false;
+                        result.append(json(h.latest.uuid));
+                    }
+                    result.append(']');
+                    for(var entry:requested.entrySet()) {
+                        result.append(',');
+                        result.append(json(entry.getKey())).append(":[");
+                        boolean firstCard=true;
+                        for(History h:runtimeCards) {
+                            if(!firstCard) result.append(',');
+                            firstCard=false;
+                            double value=h.latest.values[entry.getValue()];
+                            result.append(json(Double.isFinite(value)?Double.toString(value):null));
+                        }
+                        result.append(']');
+                    }
+                }
+                send(x,200,"application/json",result.append('}').toString().getBytes(StandardCharsets.UTF_8));
+            } else if(path.equals("/api/gpus")) {
                 long since=0; String query=x.getRequestURI().getRawQuery();
                 if(query!=null)for(String p:query.split("&"))if(p.startsWith("since="))since=Long.parseLong(p.substring(6));
                 send(x,200,"application/json",snapshot(true,since).getBytes(StandardCharsets.UTF_8));

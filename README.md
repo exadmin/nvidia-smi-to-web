@@ -119,6 +119,56 @@ Each GPU retains up to 7200 samples in primitive-array ring buffers. For two GPU
 - `GET /api/gpus`: current readings and history. `metrics` defines the order of `values`; history rows are `[timestampMillis, ...values]`.
 - `GET /api/gpus?since=timestampMillis`: history points strictly newer than the timestamp.
 - `GET /api/health`: HTTP 200 for fresh successful readings, otherwise 503. Includes a `demo` flag.
+- `GET /api/runtime?metrics=temperature,power`: latest values for selected metrics across GPUs. See [Runtime API](#runtime-api).
+
+## Runtime API
+
+`GET /api/runtime?metrics=<id1>,<id2>,...` returns the latest collected values for one or more metrics without triggering a new GPU poll. Metric IDs are case-sensitive. Separate IDs with commas; surrounding whitespace is ignored and repeated IDs appear only once in the response.
+
+Example request:
+
+```http
+GET /api/runtime?metrics=temperature,memoryUsed,power
+```
+
+Successful responses use HTTP **200** and `Content-Type: application/json; charset=utf-8`:
+
+```json
+{
+  "gpus": ["GPU-first", "GPU-second"],
+  "temperature": ["45.0", "60.0"],
+  "memoryUsed": ["4096.0", "8192.0"],
+  "power": ["90.5", "150.0"]
+}
+```
+
+The first field, `gpus`, contains GPU UUIDs in the same order as `cards` in `/api/gpus`. Each metric array follows that order: value at index `i` belongs to `gpus[i]`. Numeric values are JSON strings. An unavailable sensor is represented by JSON `null`, preserving its position in the array. When no retained GPU readings exist, `gpus` and all requested metric arrays are empty.
+
+The endpoint uses the latest retained readings, which may be stale after a failed poll. Readings older than 4 hours are excluded. Use `/api/gpus` for freshness information or `/api/health` for collector health.
+
+Supported metrics:
+
+| ID | Meaning | Unit |
+| --- | --- | --- |
+| `temperature` | GPU temperature | °C |
+| `smClock` | SM/core clock | MHz |
+| `memoryClock` | Memory clock | MHz |
+| `memoryUsed` | Used GPU memory | MiB |
+| `memoryTotal` | Total GPU memory | MiB |
+| `utilization` | GPU utilization | % |
+| `power` | Power draw | W |
+| `powerLimit` | Power limit | W |
+| `fan` | Fan speed | % |
+| `pcieGeneration` | Current PCIe generation | Generation number |
+| `pcieWidth` | Current PCIe link width | Lanes |
+
+If any ID is unknown, the entire request returns HTTP **400**, without partial metric results:
+
+```json
+{"error":"Unknown or missing metrics"}
+```
+
+The same error is returned when `metrics` is missing or empty, or contains an empty ID (for example, `metrics=temperature,`). The former parameter name `metric` is not supported. Methods other than GET return HTTP **405** with `Allow: GET` and `{"error":"GET required"}`.
 
 ## Tests
 

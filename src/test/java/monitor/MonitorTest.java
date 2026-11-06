@@ -2,6 +2,10 @@ package monitor;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.net.InetSocketAddress;
+import java.net.URI;
+import java.net.http.*;
+import com.sun.net.httpserver.HttpServer;
 import java.util.*;
 
 public class MonitorTest {
@@ -28,6 +32,35 @@ public class MonitorTest {
             String json=app.snapshot(true,now-2000);
             check(json.contains("\"history\":[["+now+","),"incremental history");
             check(!json.contains("NaN") && json.contains("null"),"valid JSON null");
+            HttpServer server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
+            server.createContext("/",app::handle);
+            server.start();
+            try(var client=HttpClient.newHttpClient()) {
+                String base="http://127.0.0.1:"+server.getAddress().getPort()+"/api/runtime";
+                var response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=temperature")).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.statusCode()==200 && response.body().equals("{\"gpus\":[\"GPU-test\"],\"temperature\":[\"45.0\"]}"),"runtime latest metric as string");
+                response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=fan")).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.body().equals("{\"gpus\":[\"GPU-test\"],\"fan\":[null]}"),"runtime unavailable sensor");
+                Main.History second=new Main.History();
+                double[] values=parsed.get(0).values().clone();values[0]=60;values[8]=30;
+                second.add(now,new Main.Reading(1,"GPU-second","Second GPU",values));
+                app.cards.put("GPU-second",second);
+                response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=temperature%2Cfan")).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.body().equals("{\"gpus\":[\"GPU-test\",\"GPU-second\"],\"temperature\":[\"45.0\",\"60.0\"],\"fan\":[null,\"30.0\"]}"),"runtime multiple metrics and GPUs in consistent order");
+                second.lastSeen=now-15_000_000;
+                response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=temperature")).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.body().equals("{\"gpus\":[\"GPU-test\"],\"temperature\":[\"45.0\"]}"),"runtime excludes expired GPU");
+                for(String suffix:List.of("","?metrics=unknown","?metrics=temperature,unknown","?metrics=","?metrics=temperature,","?metric=temperature")) {
+                    response=client.send(HttpRequest.newBuilder(URI.create(base+suffix)).build(),HttpResponse.BodyHandlers.ofString());
+                    check(response.statusCode()==400,"runtime rejects missing or unknown metric");
+                }
+                response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=temperature")).POST(HttpRequest.BodyPublishers.noBody()).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.statusCode()==405,"runtime GET only");
+                app.cards.clear();
+                response=client.send(HttpRequest.newBuilder(URI.create(base+"?metrics=temperature")).build(),HttpResponse.BodyHandlers.ofString());
+                check(response.body().equals("{\"gpus\":[],\"temperature\":[]}"),"runtime before first sample");
+                app.cards.put("GPU-test",h);
+            } finally {server.stop(0);}
             h.lastSeen=now-15_000_000;check(app.snapshot(true,0).contains("\"cards\":[]"),"expiry");
             String java=Path.of(System.getProperty("java.home"),"bin",System.getProperty("os.name").startsWith("Windows")?"java.exe":"java").toString();
             List<String> command=List.of(java,"-cp",System.getProperty("java.class.path"),MonitorTest.class.getName(),"output");
